@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Global & Private Chat</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h2>Welcome to the Chat</h2>
+
+    <!-- Login box -->
+    <div id="login-box">
+        <input id="username" placeholder="Your name" />
+        <button onclick="joinChat()">Join Chat</button>
+    </div>
+
+    <!-- Chat box -->
+    <div id="chat-box" style="display:none;">
+        <!-- Mode Switcher -->
+        <div style="margin-bottom: 10px;">
+            <label><strong>Chat Mode:</strong></label>
+            <select id="chat-mode" onchange="onModeChange()">
+                <option value="global">🌍 Global</option>
+                <option value="private">🔐 Private</option>
+            </select>
+
+            <!-- Only shown in private mode -->
+            <input id="receiver" placeholder="Recipient username" style="display:none;" oninput="onModeChange()" />
+        </div>
+
+        <h3 id="chat-title"></h3>
+        <div id="messages" style="border:1px solid #ccc; height:300px; overflow-y:scroll; padding:10px;"></div>
+
+        <input id="message" type="text" placeholder="Type your message..." />
+        <button onclick="sendMessage()">Send</button>
+
+        <input type="file" id="fileInput">
+        <button onclick="sendFile()">Send File</button>
+    </div>
+
+    <script>
+        const socket = io();
+        let username = "";
+        let receiver = "";
+        let mode = "global";
+
+        function joinChat() {
+            username = document.getElementById("username").value.trim();
+            if (!username) return alert("Enter a username");
+
+            socket.emit("join", { username });
+
+            document.getElementById("login-box").style.display = "none";
+            document.getElementById("chat-box").style.display = "block";
+
+            updateChatTitle();
+        }
+
+        function onModeChange() {
+            const modeSelect = document.getElementById("chat-mode");
+            const receiverInput = document.getElementById("receiver");
+
+            mode = modeSelect.value;
+
+            if (mode === "private") {
+                receiverInput.style.display = "inline-block";
+                receiver = receiverInput.value.trim();
+
+                if (receiver) {
+                    socket.emit("chat_mode", {
+                        sender: username,
+                        receiver: receiver,
+                        mode: mode
+                    });
+                }
+            } else {
+                receiverInput.style.display = "none";
+                receiver = "";
+            }
+
+            updateChatTitle();
+        }
+
+        function updateChatTitle() {
+            const title = mode === "private" && receiver
+                ? `🔐 Private Chat with ${receiver}`
+                : "🌍 Global Chat";
+            document.getElementById("chat-title").innerText = title;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("message");
+            const msg = input.value.trim();
+            if (!msg) 
+            return;
+
+            socket.emit("send_message", {
+                receiver: receiver,
+                msg: msg,
+                mode: mode
+            });
+
+            input.value = "";
+        }
+
+        function sendFile() {
+            const fileInput = document.getElementById("fileInput");
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("sender", username);
+            formData.append("receiver", receiver);
+            formData.append("mode", mode);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+                }).then(async res => {
+                if (!res.ok) {
+                    const text = await res.text();
+                    alert(`File upload failed: ${text}`);
+    }
+});
+
+        }
+
+        socket.on("new_message", (data) => {
+            appendMessage(`<strong>${data.user}:</strong> ${data.msg}`);
+        });
+
+        socket.on("file", (data) => {
+            const ext = data.filename.split('.').pop().toLowerCase();
+            let content = `<strong>${data.user} sent a file:</strong><br>`;
+            if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) {
+                content += `<img src="${data.url}" style="max-width:200px;">`;
+            } else {
+                content += `<a href="${data.url}" target="_blank">${data.filename}</a>`;
+            }
+            appendMessage(content);
+        });
+
+        function appendMessage(html) {
+            const msgBox = document.getElementById("messages");
+            const p = document.createElement("p");
+            p.innerHTML = html;
+            msgBox.appendChild(p);
+            msgBox.scrollTop = msgBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>
