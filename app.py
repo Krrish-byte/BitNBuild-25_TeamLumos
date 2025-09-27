@@ -89,9 +89,9 @@ def handle_send_message(data):
 
     if mode == 'private' and receiver:
         room = generate_room(sender, receiver)
-        socketio.emit('file', event_data, room=room)
+        socketio.emit('new_message', msg_data, room=room)
     else:
-        socketio.emit('file', event_data, to=None)
+        socketio.emit('new_message', msg_data, to=None)
 
 
 @socketio.on('disconnect')

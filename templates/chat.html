@@ -78,6 +78,7 @@
             }
 
             updateChatTitle();
+            clearMessages();
         }
 
         function updateChatTitle() {
@@ -147,6 +148,11 @@
             msgBox.appendChild(p);
             msgBox.scrollTop = msgBox.scrollHeight;
         }
+        function clearMessages() {
+    const msgBox = document.getElementById("messages");
+    msgBox.innerHTML = "";
+}
+
     </script>
 </body>
 </html>
