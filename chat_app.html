@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProChat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        /* Base font for general text */
+        body { font-family: 'Roboto', sans-serif; }
+        /* Poppins for headings and more prominent elements */
+        h1, h2, h3, button, input::placeholder { font-family: 'Poppins', sans-serif; }
+
+        /* Custom Scrollbar - Modern Look */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #e0e7ff; /* Light indigo */ border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #818cf8; /* Indigo 400 */ border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6366f1; /* Indigo 500 */ }
+
+        /* Fade-in animation for smoother transitions */
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Message bubble animations */
+        .message-enter { animation: messageEnter 0.3s ease-out forwards; }
+        @keyframes messageEnter {
+            from { opacity: 0; transform: translateY(5px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Highlight for new private messages */
+        .chat-item.new-message-alert {
+            animation: newMessagePulse 1.5s infinite alternate;
+            border-left: 4px solid #f97316; /* Orange-500 */
+        }
+        @keyframes newMessagePulse {
+            0% { background-color: #fef3c7; /* Amber-100 */ }
+            100% { background-color: #fcd34d; /* Amber-200 */ }
+        }
+
+        /* Hide number spinners for input type="number" if you ever use it */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-50 to-purple-50 text-gray-800 antialiased">
+
+    <div id="app" class="h-screen w-screen flex items-center justify-center p-4">
+        <!-- Login Screen -->
+        <div id="login-screen" class="w-full max-w-sm p-8 bg-white rounded-3xl shadow-2xl fade-in border border-indigo-200">
+            <h1 class="text-4xl font-bold text-center text-indigo-700 mb-6">Welcome to ProChat</h1>
+            <p class="text-center text-gray-600 mb-8">Connect and chat with your friends.</p>
+            <div class="mt-6">
+                <input id="username-input" type="text" placeholder="Choose your username" 
+                       class="w-full px-5 py-3 bg-indigo-50 rounded-xl text-lg outline-none 
+                              focus:ring-2 focus:ring-indigo-500 focus:bg-white transition duration-200" autocomplete="off">
+                <button id="join-btn" 
+                        class="w-full mt-5 bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl text-lg 
+                               hover:bg-indigo-700 transform hover:scale-105 transition duration-200 shadow-md">
+                    Join Chat
+                </button>
+                <p id="join-error" class="text-red-500 text-center mt-3 text-sm hidden"></p>
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div id="chat-interface" class="hidden h-full w-full max-w-6xl max-h-[90vh] flex bg-white rounded-3xl shadow-2xl border border-indigo-200 overflow-hidden fade-in">
+            <!-- Sidebar -->
+            <aside class="w-[300px] bg-indigo-50 border-r border-indigo-200 flex flex-col p-4">
+                <div class="pb-4 mb-4 border-b border-indigo-200">
+                    <h2 class="text-2xl font-bold text-indigo-700">Online Users</h2>
+                </div>
+                <div id="user-list" class="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    <!-- User list will be populated here -->
+                </div>
+                <div id="current-user-info" class="pt-4 mt-4 border-t border-indigo-200 text-sm text-gray-700"></div>
+            </aside>
+
+            <!-- Main Chat Area -->
+            <main id="main-chat-area" class="flex-1 flex flex-col bg-indigo-100">
+                <header class="p-4 bg-white border-b border-indigo-200 shadow-sm flex flex-col">
+                    <h3 id="chat-header" class="font-bold text-xl text-indigo-700"></h3>
+                    <p id="typing-indicator" class="text-sm text-gray-500 hidden mt-1"></p>
+                </header>
+                <div id="messages-container" class="flex-1 p-6 overflow-y-auto custom-scrollbar"></div>
+                <footer class="p-4 bg-white border-t border-indigo-200 shadow-lg">
+                    <div class="flex items-center bg-indigo-50 rounded-xl p-2 border border-indigo-200">
+                        <input id="message-input" type="text" placeholder="Type your message here..." 
+                               class="flex-1 bg-transparent px-3 py-2 outline-none text-gray-800 text-base" autocomplete="off">
+                        
+                        <label for="file-input" class="cursor-pointer p-2 text-indigo-500 hover:text-indigo-600 transition duration-200">
+                             <!-- Paperclip Icon -->
+                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-paperclip"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19A4 4 0 0 1 18 8.84l-9.19 9.19a2 2 0 0 1-2.83-2.83l9.19-9.19"></path></svg>
+                            <input id="file-input" type="file" class="hidden">
+                        </label>
+                        <button id="send-btn" 
+                                class="ml-2 bg-indigo-600 text-white rounded-lg p-2 hover:bg-indigo-700 
+                                       transform hover:scale-105 transition duration-200 shadow-md">
+                           <!-- Send Icon -->
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-send"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                    </div>
+                    <div id="upload-status" class="text-sm text-gray-600 mt-2 hidden text-center">
+                        <span class="animate-pulse">Uploading file...</span>
+                    </div>
+                </footer>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const loginScreen = document.getElementById('login-screen');
+        const chatInterface = document.getElementById('chat-interface');
+        const joinBtn = document.getElementById('join-btn');
+        const usernameInput = document.getElementById('username-input');
+        const joinError = document.getElementById('join-error');
+        const userList = document.getElementById('user-list');
+        const currentUserInfo = document.getElementById('current-user-info');
+        const chatHeader = document.getElementById('chat-header');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const fileInput = document.getElementById('file-input');
+        const uploadStatus = document.getElementById('upload-status');
+
+        let socket; // Declare socket globally
+        let currentUsername = '';
+        let activeChat = 'global'; // 'global' or a username for private chat
+        let typingTimeout;
+        const TYPING_TIMER_LENGTH = 1500; // milliseconds
+
+        // Store messages in memory to switch between chats without losing history
+        const chatHistory = {
+            global: []
+        };
+
+        // --- Event Listeners ---
+        joinBtn.addEventListener('click', joinChat);
+        usernameInput.addEventListener('keyup', (e) => e.key === 'Enter' && joinChat());
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keyup', handleMessageInput);
+        fileInput.addEventListener('change', handleFileUpload);
+        
+        // --- Core Functions ---
+        function joinChat() {
+            const username = usernameInput.value.trim();
+            if (!username) {
+                showJoinError("Please enter a username.");
+                return;
+            }
+            currentUsername = username;
+
+            // Initialize socket and setup listeners BEFORE emitting 'join'
+            socket = io(); 
+            setupSocketListeners(); // Setup listeners as soon as socket is available
+            
+            socket.emit('join', { username: currentUsername });
+        }
+
+        function showJoinError(message) {
+            joinError.textContent = message;
+            joinError.classList.remove('hidden');
+            setTimeout(() => joinError.classList.add('hidden'), 3000); // Hide after 3 seconds
+        }
+
+        function setupSocketListeners() {
+            socket.on('connect', () => {
+                console.log('Connected to server!');
+            });
+
+            socket.on('join_success', () => {
+                loginScreen.classList.add('hidden');
+                chatInterface.classList.remove('hidden');
+                currentUserInfo.innerHTML = `<p class="font-semibold text-gray-700">Logged in as: <span class="text-indigo-600">${currentUsername}</span></p>`;
+                switchChat('global'); // Now it's safe to call switchChat
+            });
+
+            socket.on('join_error', (data) => {
+                showJoinError(data.error);
+                if (socket) {
+                    socket.disconnect(); // Disconnect if join failed
+                }
+            });
+
+            socket.on('user_list_update', updateUserList);
+            socket.on('new_message', (message) => {
+                chatHistory.global.push(message);
+                if (activeChat === 'global') {
+                    renderMessage(message);
+                }
+            });
+            socket.on('private_message', (message) => {
+                // Ensure chat history for this private chat exists
+                const chatPartner = (message.sender === currentUsername) ? message.recipient : message.sender;
+                if (!chatHistory[chatPartner]) {
+                    chatHistory[chatPartner] = [];
+                }
+                chatHistory[chatPartner].push(message);
+
+                // Determine if this message is for the current active private chat
+                const isMyPrivateChat = (activeChat === chatPartner);
+                
+                if (isMyPrivateChat) {
+                     renderMessage(message);
+                } else {
+                    console.log(`New private message from ${message.sender} (for ${chatPartner})`);
+                    const userElement = document.querySelector(`.chat-item[data-chat-id="${chatPartner}"]`);
+                    if (userElement) {
+                        userElement.classList.add('new-message-alert'); 
+                    }
+                }
+            });
+
+            socket.on('system_message', (data) => {
+                renderSystemMessage(data.text);
+            });
+
+            socket.on('typing', (data) => {
+                if (data.sender === currentUsername) return; // Don't show typing for self
+                
+                // Show typing if it's for the current active chat
+                if ( (data.recipient === 'global' && activeChat === 'global') ||
+                     (data.recipient === currentUsername && data.sender === activeChat) ) {
+                    showTypingIndicator(data.sender);
+                }
+            });
+
+            socket.on('stop_typing', (data) => {
+                if (data.sender === currentUsername) return; // Don't hide typing for self
+                
+                // Hide typing if it's for the current active chat
+                if ( (data.recipient === 'global' && activeChat === 'global') ||
+                     (data.recipient === currentUsername && data.sender === activeChat) ) {
+                    hideTypingIndicator(data.sender);
+                }
+            });
+        }
+
+        function updateUserList(users) {
+            userList.innerHTML = `
+                <div class="p-3 mb-1 rounded-xl cursor-pointer chat-item transition duration-200 
+                            ${activeChat === 'global' ? 'bg-indigo-200 text-indigo-800 font-semibold shadow-inner' : 'hover:bg-indigo-100 text-gray-700'}" 
+                            data-chat-id="global">
+                    <p class="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6 6 0 017.029-4.332 6.001 6.001 0 011.912 11.281 6 6 0 01-9.754-3.07A5.998 5.998 0 014.332 8.027zM7 12a1 1 0 11-2 0 1 1 0 012 0zm7-2a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"/></svg>
+                        # Global Chat <span class="text-xs ml-auto bg-indigo-300 text-indigo-900 px-2 py-0.5 rounded-full">${users.length}</span>
+                    </p>
+                </div>
+            `;
+            const otherUsers = users.filter(user => user !== currentUsername);
+            if (otherUsers.length === 0) {
+                userList.innerHTML += `<p class="p-3 text-gray-500 italic text-sm text-center">No other users online.</p>`;
+            } else {
+                otherUsers.forEach(user => {
+                    if (!chatHistory[user]) {
+                        chatHistory[user] = [];
+                    }
+                    const userElement = document.createElement('div');
+                    userElement.className = `p-3 mb-1 rounded-xl cursor-pointer chat-item transition duration-200 
+                                            ${activeChat === user ? 'bg-indigo-200 text-indigo-800 font-semibold shadow-inner' : 'hover:bg-indigo-100 text-gray-700'}`;
+                    userElement.dataset.chatId = user;
+                    userElement.innerHTML = `<p class="flex items-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+                                                ${user}
+                                            </p>`;
+                    userList.appendChild(userElement);
+                });
+            }
+
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    // Remove highlight when clicking on a private chat item
+                    item.classList.remove('new-message-alert');
+                    switchChat(item.dataset.chatId);
+                });
+            });
+        }
+        
+        function switchChat(chatId) {
+            activeChat = chatId;
+            messagesContainer.innerHTML = ''; // Clear messages
+            typers.clear(); // Clear typers for the new chat
+            typingIndicator.classList.add('hidden'); // Hide typing indicator when switching chat
+
+            if (chatId === 'global') {
+                chatHeader.textContent = 'Global Chat';
+            } else {
+                chatHeader.textContent = `Private Chat with ${chatId}`;
+            }
+
+            // Highlight the active chat in the user list and render its history
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.remove('bg-indigo-200', 'text-indigo-800', 'font-semibold', 'shadow-inner');
+                item.classList.add('hover:bg-indigo-100', 'text-gray-700');
+                if (item.dataset.chatId === activeChat) {
+                    item.classList.add('bg-indigo-200', 'text-indigo-800', 'font-semibold', 'shadow-inner');
+                    item.classList.remove('hover:bg-indigo-100'); // Remove hover effect on active
+                }
+            });
+
+            // Render messages for the newly active chat
+            if (chatHistory[activeChat]) {
+                chatHistory[activeChat].forEach(msg => renderMessage(msg, false)); // Don't scroll until all loaded
+            }
+            messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll to bottom after rendering history
+        }
+        
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            const messageData = { 
+                text: text,
+                timestamp: new Date().toISOString()
+            };
+            if (activeChat !== 'global') {
+                messageData.recipient = activeChat;
+            }
+
+            socket.emit('send_message', messageData);
+            messageInput.value = '';
+            stopTyping(); // Clear typing status after sending message
+        }
+
+        let isTyping = false;
+        function handleMessageInput() {
+            if (!isTyping) {
+                isTyping = true;
+                const typingData = {};
+                if (activeChat !== 'global') {
+                    typingData.recipient = activeChat;
+                }
+                socket.emit('typing', typingData);
+            }
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                stopTyping();
+            }, TYPING_TIMER_LENGTH);
+        }
+
+        function stopTyping() {
+            if (isTyping) {
+                isTyping = false;
+                const typingData = {};
+                if (activeChat !== 'global') {
+                    typingData.recipient = activeChat;
+                }
+                socket.emit('stop_typing', typingData);
+            }
+        }
+
+        const typers = new Set(); 
+
+        function showTypingIndicator(sender) {
+            if (sender === currentUsername) return; // Sanity check, should be filtered by server too
+            
+            typers.add(sender);
+            updateTypingIndicatorDisplay();
+        }
+
+        function hideTypingIndicator(sender) {
+            typers.delete(sender);
+            updateTypingIndicatorDisplay();
+        }
+
+        function updateTypingIndicatorDisplay() {
+            if (typers.size > 0) {
+                const names = Array.from(typers).join(', ');
+                typingIndicator.textContent = `${names} is typing...`;
+                typingIndicator.classList.remove('hidden');
+            } else {
+                typingIndicator.classList.add('hidden');
+            }
+        }
+
+
+        async function handleFileUpload() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            uploadStatus.textContent = `Uploading ${file.name}...`;
+            uploadStatus.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                if (!response.ok) throw new Error('File upload failed on server.');
+                
+                const result = await response.json();
+                const fileData = { 
+                    filename: result.filename,
+                    timestamp: new Date().toISOString()
+                };
+                if (activeChat !== 'global') {
+                    fileData.recipient = activeChat;
+                }
+                socket.emit('send_file', fileData);
+            } catch (error) {
+                console.error("Upload failed:", error);
+                alert("File upload failed: " + error.message);
+            } finally {
+                fileInput.value = ''; // Reset the input
+                uploadStatus.classList.add('hidden');
+                uploadStatus.textContent = ''; // Clear text
+            }
+        }
+
+        function formatTimestamp(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderSystemMessage(text) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('flex', 'justify-center', 'mb-4', 'fade-in');
+            messageElement.innerHTML = `
+                <div class="max-w-md text-center text-sm text-gray-500 italic px-4 py-2 rounded-lg bg-indigo-200 shadow-sm">
+                    ${text}
+                </div>
+            `;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function renderMessage(msg, shouldScroll = true) {
+            const isSentByMe = msg.sender === currentUsername;
+            const messageElement = document.createElement('div');
+            // Added message-enter class for individual message animation
+            messageElement.classList.add('flex', 'mb-4', isSentByMe ? 'justify-end' : 'justify-start', 'message-enter'); 
+            
+            let contentHTML = '';
+            if (msg.type === 'text') {
+                 contentHTML = `<p class="break-words">${msg.text}</p>`;
+            } else if (msg.type === 'file') {
+                const fileUrl = `/uploads/${msg.filename}`;
+                const fileExtension = msg.filename.split('.').pop().toLowerCase();
+                let iconSvg = '';
+
+                // Common file type icons
+                if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(fileExtension)) {
+                    contentHTML = `<img src="${fileUrl}" class="rounded-lg max-w-xs cursor-pointer block shadow-md" style="max-height: 250px; object-fit: contain;" onclick="window.open('${fileUrl}', '_blank')">`;
+                } else {
+                    switch (fileExtension) {
+                        case 'pdf': iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="10" y1="12" x2="10" y2="18"/><line x1="14" y1="12" x2="14" y2="18"/><line x1="7" y1="15" x2="17" y2="15"/></svg>'; break;
+                        case 'doc': case 'docx': iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>'; break;
+                        case 'xls': case 'xlsx': iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><rect x="8" y="12" width="8" height="6"/></svg>'; break;
+                        case 'zip': case 'rar': iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h8"/></svg>'; break;
+                        case 'txt': iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>'; break;
+                        default: iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>'; // Generic file icon
+                    }
+                     contentHTML = `<a href="${fileUrl}" target="_blank" class="flex items-center p-3 bg-indigo-200 hover:bg-indigo-300 rounded-lg text-indigo-800 shadow-sm transition duration-200">
+                                   ${iconSvg}
+                                   <span class="ml-2 font-medium">${msg.filename}</span>
+                                </a>`;
+                }
+            }
+
+            messageElement.innerHTML = `
+                <div class="max-w-md">
+                    <p class="text-xs text-gray-500 mb-1 ${isSentByMe ? 'text-right' : 'text-left'}">
+                        ${msg.sender} <span class="text-gray-400 ml-1">${msg.timestamp ? formatTimestamp(msg.timestamp) : ''}</span>
+                    </p>
+                    <div class="${isSentByMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none'} 
+                                rounded-2xl p-3 shadow-md border border-gray-200">
+                       ${contentHTML}
+                    </div>
+                </div>`;
+
+            messagesContainer.appendChild(messageElement);
+            if (shouldScroll) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
+    </script>
+</body>
+</html>
